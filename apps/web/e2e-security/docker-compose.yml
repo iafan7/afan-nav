@@ -1,0 +1,33 @@
+# LinkNest isolated password-change E2E — project: linknest-e2e-security
+# Used only by apps/web/e2e-security/run-isolated.sh. Does not mount ./data.
+
+services:
+  linknest:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: linknest-e2e-security
+    ports:
+      - "3101:3000"
+    env_file:
+      - ${E2E_ENV_FILE:?E2E_ENV_FILE must be set}
+    environment:
+      DATABASE_PATH: /data/linknest.db
+      NODE_ENV: production
+      PORT: "3000"
+      COOKIE_SECURE: "false"
+    volumes:
+      - ${E2E_DATA_DIR:?E2E_DATA_DIR must be set}:/data
+    restart: "no"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/public/site').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 25s

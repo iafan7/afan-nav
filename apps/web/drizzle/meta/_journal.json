@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784467817554,
+      "tag": "0000_demonic_tattoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784469000000,
+      "tag": "0001_owner_nickname_and_quote_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784470000000,
+      "tag": "0002_drop_daily_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784482000000,
+      "tag": "0003_admin_auth_version",
+      "breakpoints": true
+    }
+  ]
+}
