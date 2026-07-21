@@ -4,32 +4,48 @@
 
 ```bash
 cd /path/to/afan-nav
-cp .env.example .env
-# 填写 ADMIN_USERNAME、ADMIN_PASSWORD、SESSION_SECRET（≥32）、COOKIE_SECURE
+cp .env.example .env   # 可直接使用示例默认值；公网请再改 SESSION_SECRET / COOKIE_SECURE
 mkdir -p data && chmod 777 data   # 或: sudo chown -R 1001:1001 data
 
 docker compose up -d --build
 ```
 
 - Compose：仓库根目录 `docker-compose.yml`（唯一正式部署配置）
-- 环境变量：根目录 `.env`（不入库；由 `.env.example` 复制）
+- 环境变量：根目录 `.env`（不入库；由 `.env.example` 复制）。未设置时 Compose 使用内置默认值
 - 数据目录：`./data` → 容器 `/data`（SQLite + `uploads/link-icons`）
 - 容器名：`linknest`
 - 健康检查：`http://127.0.0.1:3000/api/public/site`
 - 前台：http://127.0.0.1:3000/
 - 登录：http://127.0.0.1:3000/login
 
-缺少 `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `SESSION_SECRET` / `COOKIE_SECURE` 时，`docker compose` 会明确失败。
-
 反向代理、HTTPS 证书与防火墙由部署者自行配置。
+
+## 默认环境变量
+
+以下默认值**仅用于首次初始化和快速部署**，**不是**安全的生产配置：
+
+| 变量 | 默认值 |
+|---|---|
+| `ADMIN_USERNAME` | `admin` |
+| `ADMIN_PASSWORD` | `123456` |
+| `SESSION_SECRET` | `0123456789abcdef0123456789abcdef`（32 字符） |
+| `COOKIE_SECURE` | `false` |
+
+请务必注意：
+
+- 默认管理员账号：`admin`；默认管理员密码：`123456`
+- 首次登录后应**立即**在后台「站点设置 → 安全设置」修改管理员密码
+- 初始化完成后，**数据库管理员凭据为权威来源**；修改环境变量**不会**覆盖已有管理员密码
+- 正式公网部署必须替换默认 `SESSION_SECRET`
+- HTTPS 环境必须将 `COOKIE_SECURE` 设置为 `true`
 
 ## 环境变量
 
 | 变量 | 说明 |
 |---|---|
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | **仅首次**写入 `admin_credentials`；已有管理员时 env **不得**覆盖；密码 **6～18** 位 |
-| `SESSION_SECRET` | ≥32 字符；禁止弱默认上线 |
-| `COOKIE_SECURE` | HTTPS：`true`；纯 HTTP 实验室：`false` |
+| `SESSION_SECRET` | ≥32 字符；公网必须替换 Compose / `.env.example` 中的默认值 |
+| `COOKIE_SECURE` | HTTPS：`true`；纯 HTTP：`false` |
 | `PORT` | 宿主机映射端口，默认 `3000` |
 | `DATABASE_PATH` | 容器内默认 `/data/linknest.db` |
 | `ENABLE_SERVER_TIMING` | 默认关闭；仅诊断时设 `true` |
@@ -44,7 +60,7 @@ curl -sf http://127.0.0.1:3000/api/public/site
 docker logs --tail 100 linknest
 
 docker compose stop
-docker compose --env-file .env start
+docker compose start
 ```
 
 ## 重建容器（保留数据）
@@ -52,7 +68,7 @@ docker compose --env-file .env start
 **禁止**对有数据环境执行 `docker compose down -v`、`volume prune`、`system prune --volumes`。
 
 ```bash
-docker compose --env-file .env up -d --force-recreate --build
+docker compose up -d --force-recreate --build
 ```
 
 ## 备份与恢复

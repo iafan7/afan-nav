@@ -1,10 +1,13 @@
 # LinkNest — single deployment Compose (repo root).
 # Usage:
-#   cp .env.example .env   # fill required secrets (no weak defaults)
+#   cp .env.example .env   # optional; Compose defaults match .env.example
 #   mkdir -p data && chmod 777 data   # or chown 1001:1001
 #   docker compose up -d --build
 #
-# Required in .env: ADMIN_USERNAME, ADMIN_PASSWORD, SESSION_SECRET, COOKIE_SECURE
+# Defaults (first-boot / quick deploy only — replace for public production):
+#   ADMIN_USERNAME=admin  ADMIN_PASSWORD=123456
+#   SESSION_SECRET=0123456789abcdef0123456789abcdef (32 chars)
+#   COOKIE_SECURE=false
 # ADMIN_* are first-boot only; after init, credentials live in SQLite.
 
 services:
@@ -16,12 +19,13 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      ADMIN_USERNAME: ${ADMIN_USERNAME:?ADMIN_USERNAME is required}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set (min 32 characters)}
-      COOKIE_SECURE: ${COOKIE_SECURE:?COOKIE_SECURE is required (true for HTTPS, false for plain HTTP)}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}
+      SESSION_SECRET: ${SESSION_SECRET:-0123456789abcdef0123456789abcdef}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       DATABASE_PATH: /data/linknest.db
       NODE_ENV: production
       PORT: "3000"
