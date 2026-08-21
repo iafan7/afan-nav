@@ -1,0 +1,46 @@
+# LinkNest — single deployment Compose (repo root).
+# Usage:
+#   cp .env.example .env   # optional; Compose defaults match .env.example
+#   mkdir -p data && chmod 777 data   # or chown 1001:1001
+#   docker compose up -d --build
+#
+# Defaults (first-boot / quick deploy only — replace for public production):
+#   ADMIN_USERNAME=admin  ADMIN_PASSWORD=123456
+#   SESSION_SECRET=0123456789abcdef0123456789abcdef (32 chars)
+#   COOKIE_SECURE=false
+# ADMIN_* are first-boot only; after init, credentials live in SQLite.
+
+services:
+  linknest:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: linknest
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}
+      SESSION_SECRET: ${SESSION_SECRET:-0123456789abcdef0123456789abcdef}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DATABASE_PATH: /data/linknest.db
+      NODE_ENV: production
+      PORT: "3000"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/public/site').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
