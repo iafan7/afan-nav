@@ -1,9 +1,9 @@
-/** DB stores public/private; product UI means 前台显示 / 隐藏. */
+/** DB stores public/private; UI: 公开 / 私有. */
 
 export type VisibilityDb = "public" | "private";
 
-export function visibilityLabel(value: VisibilityDb): "显示" | "隐藏" {
-  return value === "public" ? "显示" : "隐藏";
+export function visibilityLabel(value: VisibilityDb): "公开" | "私有" {
+  return value === "public" ? "公开" : "私有";
 }
 
 export function visibilityTagClass(value: VisibilityDb): "tag-public" | "tag-private" {

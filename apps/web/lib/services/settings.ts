@@ -3,8 +3,10 @@ import { nanoid } from "nanoid";
 import type { z } from "zod";
 import { getDb, getSqlite } from "../db/client";
 import { categories, links, searchEngines, siteSettings } from "../db/schema";
+import { DEFAULT_LINK_CHECK_INTERVAL_MINUTES } from "../link-check-defaults";
 import { ensureReady } from "../ready";
 import type { settingsUpdateSchema } from "../validators/auth";
+import type { ExportSnapshotInput } from "../validators/import-snapshot";
 import type {
   searchEngineCreateSchema,
   searchEngineUpdateSchema,
@@ -65,6 +67,10 @@ export async function updateSettings(input: z.infer<typeof settingsUpdateSchema>
     siteName: input.siteName ?? current.siteName,
     ownerNickname: input.ownerNickname ?? current.ownerNickname,
     defaultSearchEngineId: nextDefault,
+    linkCheckIntervalMinutes:
+      input.linkCheckIntervalMinutes === undefined
+        ? (current.linkCheckIntervalMinutes ?? DEFAULT_LINK_CHECK_INTERVAL_MINUTES)
+        : input.linkCheckIntervalMinutes,
     updatedAt: nowIso(),
   };
 
@@ -195,11 +201,150 @@ export async function exportSnapshot() {
           siteName: settings.siteName,
           ownerNickname: settings.ownerNickname,
           defaultSearchEngineId: settings.defaultSearchEngineId,
+          linkCheckIntervalMinutes: settings.linkCheckIntervalMinutes,
           updatedAt: settings.updatedAt,
         }
       : null,
     categories: db.select().from(categories).all(),
     links: db.select().from(links).all(),
     searchEngines: await listSearchEngines(),
+  };
+}
+
+/**
+ * Full replace of site content from an export JSON snapshot.
+ * Does not touch admin_credentials or daily_quote_cache.
+ */
+export async function importSnapshot(snapshot: ExportSnapshotInput) {
+  await ensureReady();
+  const db = getDb();
+  const current = db.select().from(siteSettings).where(eq(siteSettings.id, 1)).get();
+  if (!current) {
+    throw new ServiceError("站点设置不存在", 500);
+  }
+
+  const categoryIds = new Set(snapshot.categories.map((c) => c.id));
+  if (categoryIds.size !== snapshot.categories.length) {
+    throw new ServiceError("分类 ID 重复", 400);
+  }
+  const categoryNames = new Set(snapshot.categories.map((c) => c.name));
+  if (categoryNames.size !== snapshot.categories.length) {
+    throw new ServiceError("分类名称重复", 400);
+  }
+
+  const linkIds = new Set(snapshot.links.map((l) => l.id));
+  if (linkIds.size !== snapshot.links.length) {
+    throw new ServiceError("链接 ID 重复", 400);
+  }
+  const linkUrls = new Set(snapshot.links.map((l) => l.url));
+  if (linkUrls.size !== snapshot.links.length) {
+    throw new ServiceError("链接 URL 重复", 400);
+  }
+  for (const link of snapshot.links) {
+    if (!categoryIds.has(link.categoryId)) {
+      throw new ServiceError(`链接「${link.title}」引用了不存在的分类`, 400);
+    }
+  }
+
+  const engineIds = new Set(snapshot.searchEngines.map((e) => e.id));
+  if (engineIds.size !== snapshot.searchEngines.length) {
+    throw new ServiceError("搜索引擎 ID 重复", 400);
+  }
+
+  let nextDefault: string | null = null;
+  const fromSettings = snapshot.siteSettings?.defaultSearchEngineId ?? null;
+  if (fromSettings && engineIds.has(fromSettings)) {
+    nextDefault = fromSettings;
+  } else {
+    nextDefault =
+      snapshot.searchEngines.find((e) => e.isDefault)?.id ??
+      snapshot.searchEngines[0]?.id ??
+      null;
+  }
+
+  if (!nextDefault) {
+    throw new ServiceError("至少需要一个搜索引擎", 400);
+  }
+
+  const nextSiteName = snapshot.siteSettings?.siteName ?? current.siteName;
+  const nextOwnerNickname = snapshot.siteSettings?.ownerNickname ?? current.ownerNickname;
+  const nextLinkCheckInterval =
+    snapshot.siteSettings?.linkCheckIntervalMinutes ??
+    current.linkCheckIntervalMinutes ??
+    DEFAULT_LINK_CHECK_INTERVAL_MINUTES;
+  const stamp = nowIso();
+
+  try {
+    getSqlite().transaction(() => {
+      db.delete(links).run();
+      db.delete(categories).run();
+      db.delete(searchEngines).run();
+
+      for (const category of snapshot.categories) {
+        db.insert(categories)
+          .values({
+            id: category.id,
+            name: category.name,
+            sortOrder: category.sortOrder,
+            visibility: category.visibility,
+            createdAt: category.createdAt,
+            updatedAt: category.updatedAt,
+          })
+          .run();
+      }
+
+      for (const link of snapshot.links) {
+        db.insert(links)
+          .values({
+            id: link.id,
+            categoryId: link.categoryId,
+            title: link.title,
+            url: link.url,
+            description: link.description ?? null,
+            iconUrl: link.iconUrl ?? null,
+            sortOrder: link.sortOrder,
+            checkStatus: link.checkStatus ?? null,
+            checkMessage: link.checkMessage ?? null,
+            checkedAt: link.checkedAt ?? null,
+            createdAt: link.createdAt,
+            updatedAt: link.updatedAt,
+          })
+          .run();
+      }
+
+      for (const engine of snapshot.searchEngines) {
+        db.insert(searchEngines)
+          .values({
+            id: engine.id,
+            name: engine.name,
+            urlTemplate: engine.urlTemplate,
+            sortOrder: engine.sortOrder,
+            isDefault: false,
+          })
+          .run();
+      }
+
+      db.update(siteSettings)
+        .set({
+          siteName: nextSiteName,
+          ownerNickname: nextOwnerNickname,
+          defaultSearchEngineId: nextDefault,
+          linkCheckIntervalMinutes: nextLinkCheckInterval,
+          updatedAt: stamp,
+        })
+        .where(eq(siteSettings.id, 1))
+        .run();
+
+      applyDefaultEngine(nextDefault);
+    })();
+  } catch (error) {
+    if (error instanceof ServiceError) throw error;
+    throw new ServiceError("导入失败，数据未写入", 400);
+  }
+
+  return {
+    categories: snapshot.categories.length,
+    links: snapshot.links.length,
+    searchEngines: snapshot.searchEngines.length,
   };
 }

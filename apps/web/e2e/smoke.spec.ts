@@ -21,10 +21,10 @@ test("login and create public category + link then export", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "分类管理" })).toBeVisible();
   await page.getByRole("button", { name: "新建分类" }).click();
   await page.getByLabel("名称").fill(catName);
-  await page.getByLabel("前台显示").selectOption("public");
+  await page.getByLabel("可见性").selectOption("public");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.locator(".admin-desktop-only").getByText(catName)).toBeVisible();
-  await expect(page.getByText("显示").first()).toBeVisible();
+  await expect(page.getByText("公开").first()).toBeVisible();
 
   const linkTitle = `Example-${Date.now()}`;
   await page.getByRole("link", { name: "链接管理" }).click();
@@ -34,11 +34,11 @@ test("login and create public category + link then export", async ({ page }) => 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.locator(".admin-desktop-only .admin-site-title", { hasText: linkTitle })).toBeVisible();
 
-  // Close link drawer overlay before using side nav
+  // Ensure form closed before using side nav
   await page.keyboard.press("Escape");
   await expect(page.locator(".overlay")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "导出备份" }).click();
+  await page.getByRole("link", { name: "备份导入" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出 JSON" }).click();
   const download = await downloadPromise;

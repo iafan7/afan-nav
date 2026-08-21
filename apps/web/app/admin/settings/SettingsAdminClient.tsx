@@ -9,16 +9,25 @@ import { useToast } from "@/components/Toast";
 type Props = {
   initialSiteName: string;
   initialOwnerNickname: string;
+  initialLinkCheckIntervalMinutes: number;
 };
 
-export function SettingsAdminClient({ initialSiteName, initialOwnerNickname }: Props) {
+export function SettingsAdminClient({
+  initialSiteName,
+  initialOwnerNickname,
+  initialLinkCheckIntervalMinutes,
+}: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [siteName, setSiteName] = useState(initialSiteName);
   const [ownerNickname, setOwnerNickname] = useState(initialOwnerNickname);
+  const [linkCheckIntervalMinutes, setLinkCheckIntervalMinutes] = useState(
+    initialLinkCheckIntervalMinutes,
+  );
   const [savedName, setSavedName] = useState(initialSiteName);
   const [savedNickname, setSavedNickname] = useState(initialOwnerNickname);
+  const [savedInterval, setSavedInterval] = useState(initialLinkCheckIntervalMinutes);
   const [saving, setSaving] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -32,13 +41,25 @@ export function SettingsAdminClient({ initialSiteName, initialOwnerNickname }: P
     setSavedName(initialSiteName);
     setOwnerNickname(initialOwnerNickname);
     setSavedNickname(initialOwnerNickname);
-  }, [initialSiteName, initialOwnerNickname]);
+    setLinkCheckIntervalMinutes(initialLinkCheckIntervalMinutes);
+    setSavedInterval(initialLinkCheckIntervalMinutes);
+  }, [initialSiteName, initialOwnerNickname, initialLinkCheckIntervalMinutes]);
 
   const dirty =
-    siteName.trim() !== savedName.trim() || ownerNickname.trim() !== savedNickname.trim();
+    siteName.trim() !== savedName.trim() ||
+    ownerNickname.trim() !== savedNickname.trim() ||
+    linkCheckIntervalMinutes !== savedInterval;
 
   async function save() {
     if (!dirty || !siteName.trim() || !ownerNickname.trim() || saving) return;
+    if (
+      !Number.isInteger(linkCheckIntervalMinutes) ||
+      linkCheckIntervalMinutes < 0 ||
+      linkCheckIntervalMinutes > 1440
+    ) {
+      toast("检测间隔须为 0～1440 的整数分钟", "error");
+      return;
+    }
     setSaving(true);
     const nextName = siteName.trim();
     const nextNickname = ownerNickname.trim();
@@ -46,7 +67,11 @@ export function SettingsAdminClient({ initialSiteName, initialOwnerNickname }: P
       const res = await fetch("/api/admin/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteName: nextName, ownerNickname: nextNickname }),
+        body: JSON.stringify({
+          siteName: nextName,
+          ownerNickname: nextNickname,
+          linkCheckIntervalMinutes,
+        }),
       });
       if (!res.ok) {
         toast("保存失败", "error");
@@ -56,6 +81,7 @@ export function SettingsAdminClient({ initialSiteName, initialOwnerNickname }: P
       setSavedName(nextName);
       setOwnerNickname(nextNickname);
       setSavedNickname(nextNickname);
+      setSavedInterval(linkCheckIntervalMinutes);
       toast("站点设置已保存");
       startTransition(() => {
         router.refresh();
@@ -121,6 +147,22 @@ export function SettingsAdminClient({ initialSiteName, initialOwnerNickname }: P
           />
           <p className="admin-form-hint" style={{ marginTop: 6 }}>
             前台欢迎语显示为「早上好，{ownerNickname.trim() || "…"}」。
+          </p>
+        </div>
+        <div className="field">
+          <label htmlFor="link-check-interval">链接自动检测间隔（分钟）</label>
+          <input
+            id="link-check-interval"
+            className="input"
+            type="number"
+            min={0}
+            max={1440}
+            step={1}
+            value={linkCheckIntervalMinutes}
+            onChange={(e) => setLinkCheckIntervalMinutes(Number(e.target.value))}
+          />
+          <p className="admin-form-hint" style={{ marginTop: 6 }}>
+            默认 60 分钟；设为 0 可关闭自动检测。由服务端后台定时执行，无需打开链接管理页。
           </p>
         </div>
         <p className="admin-form-hint">默认搜索引擎权威字段：site_settings.default_search_engine_id。</p>

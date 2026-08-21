@@ -50,6 +50,7 @@ type NavCategory = {
   id: string;
   name: string;
   sortOrder: number;
+  visibility?: "public" | "private";
   links: NavLink[];
 };
 
@@ -285,6 +286,11 @@ export function PublicHome() {
                   >
                     <IconCategory id={cat.id} size={18} />
                     <span className="mn-nav-label">{cat.name}</span>
+                    {cat.visibility === "private" ? (
+                      <span className="mn-nav-private" title="仅管理员可见">
+                        私有
+                      </span>
+                    ) : null}
                   </button>
                 ))
               : phase === "empty" ? (
@@ -416,6 +422,11 @@ export function PublicHome() {
                         <IconCategory id={cat.id} size={20} />
                       </span>
                       <h2 className="mn-category-title">{cat.name}</h2>
+                      {cat.visibility === "private" ? (
+                        <span className="mn-category-private" title="仅管理员可见">
+                          私有
+                        </span>
+                      ) : null}
                       <span className="mn-category-badge">{cat.links.length}</span>
                       <IconChevron
                         size={18}

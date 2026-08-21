@@ -4,6 +4,7 @@ import { getDb, getSqlite } from "./client";
 import { ensureSchema } from "./ensure-schema";
 import { adminCredentials, searchEngines, siteSettings } from "./schema";
 import { getAdminPasswordPolicyError, hashPassword } from "../auth/password";
+import { DEFAULT_LINK_CHECK_INTERVAL_MINUTES } from "../link-check-defaults";
 
 function nowIso() {
   return new Date().toISOString();
@@ -60,6 +61,7 @@ export async function bootstrapDatabase() {
         siteName: "LinkNest",
         ownerNickname: "阿凡",
         defaultSearchEngineId: null,
+        linkCheckIntervalMinutes: DEFAULT_LINK_CHECK_INTERVAL_MINUTES,
         updatedAt: now,
       })
       .run();

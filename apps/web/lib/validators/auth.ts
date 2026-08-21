@@ -10,6 +10,8 @@ export const settingsUpdateSchema = z.object({
   siteName: z.string().trim().min(1).max(100).optional(),
   ownerNickname: z.string().trim().min(1).max(40).optional(),
   defaultSearchEngineId: z.string().nullable().optional(),
+  /** 0 disables auto check; default 1 minute. */
+  linkCheckIntervalMinutes: z.number().int().min(0).max(1440).optional(),
 });
 
 export const changePasswordSchema = z

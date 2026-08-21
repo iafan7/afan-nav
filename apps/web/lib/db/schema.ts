@@ -1,10 +1,15 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { DEFAULT_LINK_CHECK_INTERVAL_MINUTES } from "../link-check-defaults";
 
 export const siteSettings = sqliteTable("site_settings", {
   id: integer("id").primaryKey().default(1),
   siteName: text("site_name").notNull().default("LinkNest"),
   ownerNickname: text("owner_nickname").notNull().default("阿凡"),
   defaultSearchEngineId: text("default_search_engine_id"),
+  /** Auto link health-check interval in minutes. 0 = disabled. */
+  linkCheckIntervalMinutes: integer("link_check_interval_minutes")
+    .notNull()
+    .default(DEFAULT_LINK_CHECK_INTERVAL_MINUTES),
   updatedAt: text("updated_at").notNull(),
 });
 
@@ -23,7 +28,7 @@ export const categories = sqliteTable("categories", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
   sortOrder: integer("sort_order").notNull().default(0),
-  visibility: text("visibility", { enum: ["public", "private"] }).notNull().default("public"), // UI: 显示/隐藏 (前台展示)
+  visibility: text("visibility", { enum: ["public", "private"] }).notNull().default("public"), // 公开 / 私有（私有仅管理员前台可见）
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -38,6 +43,10 @@ export const links = sqliteTable("links", {
   description: text("description"),
   iconUrl: text("icon_url"),
   sortOrder: integer("sort_order").notNull().default(0),
+  /** null = never checked; valid | invalid */
+  checkStatus: text("check_status", { enum: ["valid", "invalid"] }),
+  checkMessage: text("check_message"),
+  checkedAt: text("checked_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

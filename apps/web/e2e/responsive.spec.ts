@@ -107,12 +107,15 @@ test("admin mobile shell uses header menu and card list at 375px", async ({ page
   expect(panelStyles.width).toBeLessThanOrEqual(panelStyles.viewport);
 
   await page.getByRole("button", { name: "新建链接" }).click();
-  const drawer = page.locator(".drawer");
-  await expect(drawer).toBeVisible();
-  const drawerBox = await drawer.boundingBox();
-  expect(drawerBox).toBeTruthy();
-  expect(drawerBox!.x).toBeGreaterThanOrEqual(0);
-  expect(drawerBox!.x + drawerBox!.width).toBeLessThanOrEqual(375 + 1);
+  const formDialog = page.locator(".form-dialog-panel");
+  await expect(formDialog).toBeVisible();
+  const box = await formDialog.boundingBox();
+  expect(box).toBeTruthy();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(375 + 1);
+  // Centered modal (not right-edge drawer)
+  expect(box!.x).toBeGreaterThan(8);
+  expect(box!.x + box!.width).toBeLessThan(375 - 8);
 });
 
 test("desktop layout remains two-column at 1440px", async ({ page }) => {

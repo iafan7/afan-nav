@@ -1,3 +1,4 @@
+import { DEFAULT_LINK_CHECK_INTERVAL_MINUTES } from "../link-check-defaults";
 import { getSqlite } from "./client";
 
 function ensureColumn(table: string, column: string, addSql: string): boolean {
@@ -10,7 +11,11 @@ function ensureColumn(table: string, column: string, addSql: string): boolean {
   return false;
 }
 
-/** Ensure tables exist (idempotent). Prefer this over migrate for single-file MVP. */
+/**
+ * Runtime schema source of truth (idempotent).
+ * Drizzle SQL under `apps/web/drizzle/` mirrors this for documentation / optional migrate —
+ * do not run migrate alone without also matching these columns.
+ */
 export function ensureSchema() {
   const sqlite = getSqlite();
   sqlite.exec(`
@@ -19,6 +24,7 @@ export function ensureSchema() {
       site_name TEXT NOT NULL DEFAULT 'LinkNest',
       owner_nickname TEXT NOT NULL DEFAULT '阿凡',
       default_search_engine_id TEXT,
+      link_check_interval_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_LINK_CHECK_INTERVAL_MINUTES},
       updated_at TEXT NOT NULL
     );
 
@@ -49,6 +55,9 @@ export function ensureSchema() {
       description TEXT,
       icon_url TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      check_status TEXT,
+      check_message TEXT,
+      checked_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -71,6 +80,14 @@ export function ensureSchema() {
 
   // Existing DBs created before owner_nickname / username / auth_version
   ensureColumn("site_settings", "owner_nickname", `owner_nickname TEXT NOT NULL DEFAULT '阿凡'`);
+  ensureColumn(
+    "site_settings",
+    "link_check_interval_minutes",
+    `link_check_interval_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_LINK_CHECK_INTERVAL_MINUTES}`,
+  );
+  ensureColumn("links", "check_status", `check_status TEXT`);
+  ensureColumn("links", "check_message", `check_message TEXT`);
+  ensureColumn("links", "checked_at", `checked_at TEXT`);
 
   const adminUsernameAdded = ensureColumn(
     "admin_credentials",

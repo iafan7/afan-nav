@@ -64,10 +64,18 @@ describe("responsive layout contracts", () => {
     const mobile = allMediaBlocks("max-width: 767px");
     ruleContains(mobile, ".side-nav-desktop", "display:\\s*none");
     ruleContains(mobile, ".admin-shell-body", "display:\\s*block");
+    ruleContains(mobile, ".admin-shell", "overflow:\\s*visible");
+    ruleContains(mobile, ".main-panel", "overflow:\\s*visible");
     ruleContains(mobile, ".main-panel", "padding:\\s*16px");
     ruleContains(mobile, ".admin-toolbar-actions", "flex-direction:\\s*column");
     ruleContains(mobile, ".admin-desktop-only", "display:\\s*none");
     ruleContains(mobile, ".admin-mobile-list", "display:\\s*flex");
     ruleContains(mobile, ".drawer", "width:\\s*min\\(100% - 32px,\\s*560px\\)");
+  });
+
+  it("pins admin desktop sidenav while main content scrolls", () => {
+    expect(css).toMatch(/\.admin-shell\s*\{[^}]*overflow:\s*hidden/);
+    expect(css).toMatch(/\.side-nav-desktop\s*\{[^}]*height:\s*100%/);
+    expect(css).toMatch(/\.main-panel\s*\{[^}]*overflow-y:\s*auto/);
   });
 });

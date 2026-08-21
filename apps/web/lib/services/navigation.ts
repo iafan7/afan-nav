@@ -3,21 +3,27 @@ import { getDb } from "../db/client";
 import { categories, links, searchEngines, siteSettings } from "../db/schema";
 import { ensureReady } from "../ready";
 
-export async function getPublicNavigation() {
+export async function getPublicNavigation(options?: { includePrivate?: boolean }) {
   await ensureReady();
   const db = getDb();
-  const publicCategories = db
+  const includePrivate = Boolean(options?.includePrivate);
+
+  const allCategories = db
     .select()
     .from(categories)
-    .where(eq(categories.visibility, "public"))
     .orderBy(asc(categories.sortOrder), asc(categories.name))
     .all();
 
+  const visibleCategories = includePrivate
+    ? allCategories
+    : allCategories.filter((cat) => cat.visibility === "public");
+
   return {
-    categories: publicCategories.map((cat) => ({
+    categories: visibleCategories.map((cat) => ({
       id: cat.id,
       name: cat.name,
       sortOrder: cat.sortOrder,
+      visibility: cat.visibility as "public" | "private",
       links: db
         .select()
         .from(links)

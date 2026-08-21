@@ -21,8 +21,14 @@ export type LinkRow = {
   description: string | null;
   iconUrl: string | null;
   sortOrder: number;
-  updatedAt: string;
+  createdAt: string;
+  checkStatus: "valid" | "invalid" | null;
+  checkMessage: string | null;
+  checkedAt: string | null;
 };
+
+type SortKey = "checkStatus" | "title" | "url" | "category" | "sortOrder" | "createdAt";
+type SortDir = "asc" | "desc";
 
 const emptyForm = {
   categoryId: "",
@@ -36,9 +42,81 @@ const emptyForm = {
 type Props = {
   initialCategories: CategoryOption[];
   initialLinks: LinkRow[];
+  linkCheckIntervalMinutes: number;
 };
 
-export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
+function checkRank(status: LinkRow["checkStatus"]) {
+  if (status === "valid") return 0;
+  if (status === "invalid") return 1;
+  return 2;
+}
+
+function StatusCell({
+  status,
+  message,
+  checkedAt,
+}: {
+  status: LinkRow["checkStatus"];
+  message: string | null;
+  checkedAt: string | null;
+}) {
+  return (
+    <div className="link-status-cell">
+      {status === "valid" ? (
+        <span className="link-status-badge is-valid" title={message ?? "有效"}>
+          有效
+        </span>
+      ) : status === "invalid" ? (
+        <span className="link-status-badge is-invalid" title={message ?? "无效"}>
+          无效
+        </span>
+      ) : (
+        <span className="link-status-badge is-unknown" title="尚未检测">
+          未检测
+        </span>
+      )}
+      <div className="link-status-checked-at" title={checkedAt ? formatDateTime(checkedAt) : "尚未检测"}>
+        {checkedAt ? formatDateTime(checkedAt) : "—"}
+      </div>
+    </div>
+  );
+}
+
+function SortHeader({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  column: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sortKey === column;
+  return (
+    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        className={`table-sort-btn${active ? " is-active" : ""}`}
+        onClick={() => onSort(column)}
+      >
+        <span>{label}</span>
+        <span className="table-sort-indicator" aria-hidden>
+          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+export function LinksAdminClient({
+  initialCategories,
+  initialLinks,
+  linkCheckIntervalMinutes,
+}: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -47,13 +125,17 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("sortOrder");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<LinkRow | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
 
   useEffect(() => {
     setCategories(initialCategories);
@@ -64,6 +146,16 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
     const t = window.setTimeout(() => setDebouncedQuery(searchQuery), 150);
     return () => window.clearTimeout(t);
   }, [searchQuery]);
+
+  // Soft refresh so background check results appear without triggering checks here.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      startTransition(() => {
+        router.refresh();
+      });
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [router]);
 
   const hasCategories = categories.length > 0;
   const hasLinks = links.length > 0;
@@ -79,6 +171,15 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
     return (id: string) => map.get(id) ?? id;
   }, [categories]);
 
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir(key === "createdAt" ? "desc" : "asc");
+  }
+
   const filteredLinks = useMemo(() => {
     let list = links;
     if (categoryFilter) {
@@ -90,8 +191,34 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
         (row) => row.title.toLowerCase().includes(q) || row.url.toLowerCase().includes(q),
       );
     }
-    return list;
-  }, [links, categoryFilter, debouncedQuery]);
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "checkStatus":
+          cmp = checkRank(a.checkStatus) - checkRank(b.checkStatus);
+          break;
+        case "title":
+          cmp = a.title.localeCompare(b.title, "zh");
+          break;
+        case "url":
+          cmp = a.url.localeCompare(b.url);
+          break;
+        case "category":
+          cmp = categoryName(a.categoryId).localeCompare(categoryName(b.categoryId), "zh");
+          break;
+        case "sortOrder":
+          cmp = a.sortOrder - b.sortOrder;
+          if (cmp === 0) cmp = a.title.localeCompare(b.title, "zh");
+          break;
+        case "createdAt":
+          cmp = a.createdAt.localeCompare(b.createdAt);
+          break;
+      }
+      return cmp * dir;
+    });
+  }, [links, categoryFilter, debouncedQuery, sortKey, sortDir, categoryName]);
 
   function openCreate() {
     setEditing(null);
@@ -100,7 +227,7 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
       categoryId: categoryFilter || categories[0]?.id || "",
     });
     setError(null);
-    setDrawerOpen(true);
+    setFormOpen(true);
   }
 
   function openEdit(row: LinkRow) {
@@ -114,7 +241,96 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
       sortOrder: row.sortOrder,
     });
     setError(null);
-    setDrawerOpen(true);
+    setFormOpen(true);
+  }
+
+  async function checkLink(row: LinkRow) {
+    if (checkingId) return;
+    setCheckingId(row.id);
+    try {
+      const res = await fetch("/api/admin/links/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        checkStatus?: "valid" | "invalid";
+        checkMessage?: string;
+        checkedAt?: string;
+        message?: string;
+        latencyMs?: number;
+      };
+      if (!res.ok) {
+        const message = data.error ?? "检测失败";
+        toast(message, "error");
+        return;
+      }
+      const checkStatus = data.checkStatus ?? (data.ok ? "valid" : "invalid");
+      const checkMessage = data.checkMessage ?? data.message ?? "";
+      const checkedAt = data.checkedAt ?? new Date().toISOString();
+      setLinks((prev) =>
+        prev.map((item) =>
+          item.id === row.id
+            ? { ...item, checkStatus, checkMessage, checkedAt }
+            : item,
+        ),
+      );
+      const latency =
+        typeof data.latencyMs === "number" ? ` · ${data.latencyMs}ms` : "";
+      toast(
+        `${row.title}：${checkMessage}${latency}`,
+        checkStatus === "valid" ? "success" : "error",
+      );
+    } catch {
+      toast("检测失败", "error");
+    } finally {
+      setCheckingId(null);
+    }
+  }
+
+  async function detectFromUrl() {
+    if (detecting || saving) return;
+    const url = form.url.trim();
+    if (!url) {
+      setError("请先填写 URL");
+      return;
+    }
+    setDetecting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/links/fetch-meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        title?: string | null;
+        description?: string | null;
+        iconUrl?: string | null;
+        finalUrl?: string;
+      };
+      if (!res.ok) {
+        setError(data.error ?? "识别失败");
+        toast(data.error ?? "识别失败", "error");
+        return;
+      }
+      setForm((prev) => ({
+        ...prev,
+        url: data.finalUrl?.trim() || prev.url,
+        title: data.title?.trim() || prev.title,
+        description: data.description?.trim() || prev.description,
+        iconUrl: data.iconUrl?.trim() || prev.iconUrl,
+      }));
+      toast("已识别标题、描述与图标");
+    } catch {
+      setError("识别失败");
+      toast("识别失败", "error");
+    } finally {
+      setDetecting(false);
+    }
   }
 
   async function save() {
@@ -140,7 +356,7 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
         setError(data.error ?? "保存失败");
         return;
       }
-      setDrawerOpen(false);
+      setFormOpen(false);
       toast(editing ? "已更新链接" : "已创建链接");
       refresh();
     } finally {
@@ -188,7 +404,11 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
     <div>
       <AdminPageHeader
         title="链接管理"
-        description="维护分类下的书签链接；外链仅允许 http/https。"
+        description={
+          linkCheckIntervalMinutes > 0
+            ? `维护分类下的书签链接；外链仅允许 http/https。服务端自动检测：每 ${linkCheckIntervalMinutes} 分钟。`
+            : "维护分类下的书签链接；外链仅允许 http/https。自动检测已关闭。"
+        }
         badge={hasLinks ? <span className="admin-page-badge">{filteredLinks.length}</span> : null}
         actions={
           <>
@@ -212,6 +432,29 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
                   {c.name}
                 </option>
               ))}
+            </select>
+            <select
+              className="select admin-toolbar-category"
+              value={`${sortKey}:${sortDir}`}
+              onChange={(e) => {
+                const [key, dir] = e.target.value.split(":") as [SortKey, SortDir];
+                setSortKey(key);
+                setSortDir(dir);
+              }}
+              aria-label="排序方式"
+            >
+              <option value="checkStatus:asc">状态 有效→无效</option>
+              <option value="checkStatus:desc">状态 无效→有效</option>
+              <option value="sortOrder:asc">排序值 ↑</option>
+              <option value="sortOrder:desc">排序值 ↓</option>
+              <option value="title:asc">标题 A→Z</option>
+              <option value="title:desc">标题 Z→A</option>
+              <option value="category:asc">分类 A→Z</option>
+              <option value="category:desc">分类 Z→A</option>
+              <option value="createdAt:desc">添加时间最新</option>
+              <option value="createdAt:asc">添加时间最早</option>
+              <option value="url:asc">URL A→Z</option>
+              <option value="url:desc">URL Z→A</option>
             </select>
             <button
               type="button"
@@ -245,17 +488,61 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
             <table className="table">
               <thead>
                 <tr>
-                  <th>站点信息</th>
-                  <th>URL</th>
-                  <th>分类</th>
-                  <th>排序</th>
-                  <th>更新时间</th>
+                  <SortHeader
+                    label="状态"
+                    column="checkStatus"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortHeader
+                    label="站点信息"
+                    column="title"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortHeader
+                    label="URL"
+                    column="url"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortHeader
+                    label="分类"
+                    column="category"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortHeader
+                    label="排序"
+                    column="sortOrder"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortHeader
+                    label="添加时间"
+                    column="createdAt"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredLinks.map((row) => (
                   <tr key={row.id}>
+                    <td>
+                      <StatusCell
+                        status={row.checkStatus}
+                        message={row.checkMessage}
+                        checkedAt={row.checkedAt}
+                      />
+                    </td>
                     <td>
                       <AdminSiteCell
                         title={row.title}
@@ -292,10 +579,19 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
                     <td>{categoryName(row.categoryId)}</td>
                     <td>{row.sortOrder}</td>
                     <td style={{ whiteSpace: "nowrap", color: "var(--color-text-secondary)", fontSize: 13 }}>
-                      {formatDateTime(row.updatedAt)}
+                      {formatDateTime(row.createdAt)}
                     </td>
                     <td>
                       <div className="admin-row-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={checkingId === row.id}
+                          onClick={() => void checkLink(row)}
+                          title="检测网站是否可访问"
+                        >
+                          {checkingId === row.id ? "检测中…" : "检测"}
+                        </button>
                         <button type="button" className="btn btn-secondary" onClick={() => openEdit(row)}>
                           编辑
                         </button>
@@ -316,6 +612,13 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
           <ul className="admin-mobile-list">
             {filteredLinks.map((row) => (
               <li key={row.id} className="admin-mobile-card">
+                <div className="admin-mobile-status">
+                  <StatusCell
+                    status={row.checkStatus}
+                    message={row.checkMessage}
+                    checkedAt={row.checkedAt}
+                  />
+                </div>
                 <AdminSiteCell title={row.title} description={row.description} iconUrl={row.iconUrl} />
                 <p className="admin-mobile-url" title={row.url}>
                   {row.url}
@@ -330,11 +633,19 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
                     <dd>{row.sortOrder}</dd>
                   </div>
                   <div>
-                    <dt>更新</dt>
-                    <dd>{formatDateTime(row.updatedAt)}</dd>
+                    <dt>添加</dt>
+                    <dd>{formatDateTime(row.createdAt)}</dd>
                   </div>
                 </dl>
                 <div className="admin-mobile-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={checkingId === row.id}
+                    onClick={() => void checkLink(row)}
+                  >
+                    {checkingId === row.id ? "检测中…" : "检测"}
+                  </button>
                   <button type="button" className="btn btn-secondary" onClick={() => openEdit(row)}>
                     编辑
                   </button>
@@ -352,99 +663,127 @@ export function LinksAdminClient({ initialCategories, initialLinks }: Props) {
         </>
       ) : null}
 
-      {drawerOpen ? (
+      {formOpen ? (
         <>
-          <div className="overlay" onClick={() => !saving && setDrawerOpen(false)} />
-          <div className="drawer" role="dialog" aria-modal="true">
-            <div className="drawer-header">
-              <strong>{editing ? "编辑链接" : "新建链接"}</strong>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={saving}
-                onClick={() => setDrawerOpen(false)}
-              >
-                关闭
-              </button>
-            </div>
-            <div className="drawer-body">
-              <div className="field">
-                <label htmlFor="link-cat">分类 *</label>
-                <select
-                  id="link-cat"
-                  className="select"
-                  value={form.categoryId}
-                  onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+          <div className="overlay" onClick={() => !saving && setFormOpen(false)} />
+          <div className="form-dialog" role="dialog" aria-modal="true" aria-labelledby="link-form-title">
+            <div className="form-dialog-panel">
+              <div className="form-dialog-header">
+                <strong id="link-form-title">{editing ? "编辑链接" : "新建链接"}</strong>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={saving}
+                  onClick={() => setFormOpen(false)}
                 >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  关闭
+                </button>
               </div>
-              <div className="field">
-                <label htmlFor="link-title">标题 *</label>
-                <input
-                  id="link-title"
-                  className="input"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+              <div className="form-dialog-body">
+                <div className="field">
+                  <label htmlFor="link-cat">分类 *</label>
+                  <select
+                    id="link-cat"
+                    className="select"
+                    value={form.categoryId}
+                    onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="link-title">标题 *</label>
+                  <input
+                    id="link-title"
+                    className="input"
+                    value={form.title}
+                    disabled={saving || detecting}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="link-url">URL *</label>
+                  <div className="field-with-action">
+                    <input
+                      id="link-url"
+                      className="input"
+                      placeholder="https://"
+                      value={form.url}
+                      disabled={saving || detecting}
+                      onChange={(e) => setForm({ ...form, url: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={saving || detecting || !form.url.trim()}
+                      onClick={() => void detectFromUrl()}
+                      title="根据网址识别标题、描述与图标"
+                    >
+                      {detecting ? "识别中…" : "识别"}
+                    </button>
+                  </div>
+                  <p className="admin-form-hint">填写网址后点击「识别」，自动填充标题、描述与网站图标。</p>
+                </div>
+                <div className="field">
+                  <div className="field-label-row">
+                    <label htmlFor="link-desc">描述</label>
+                    <span
+                      className={`field-counter${form.description.length >= 500 ? " is-limit" : ""}`}
+                      aria-live="polite"
+                    >
+                      {form.description.length}/500
+                    </span>
+                  </div>
+                  <textarea
+                    id="link-desc"
+                    className="textarea"
+                    rows={3}
+                    maxLength={500}
+                    placeholder="可选；点击「识别」可自动抓取页面简介，也可手动填写"
+                    value={form.description}
+                    disabled={saving || detecting}
+                    onChange={(e) => setForm({ ...form, description: e.target.value.slice(0, 500) })}
+                  />
+                </div>
+                <LinkIconField
+                  value={form.iconUrl}
+                  disabled={saving || detecting}
+                  onChange={(iconUrl) => setForm({ ...form, iconUrl })}
                 />
+                <div className="field">
+                  <label htmlFor="link-sort">排序</label>
+                  <input
+                    id="link-sort"
+                    className="input"
+                    type="number"
+                    value={form.sortOrder}
+                    onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
+                  />
+                </div>
+                {error ? <div className="field error">{error}</div> : null}
               </div>
-              <div className="field">
-                <label htmlFor="link-url">URL *</label>
-                <input
-                  id="link-url"
-                  className="input"
-                  placeholder="https://"
-                  value={form.url}
-                  onChange={(e) => setForm({ ...form, url: e.target.value })}
-                />
+              <div className="form-dialog-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={saving}
+                  onClick={() => setFormOpen(false)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={saving}
+                  onClick={() => void save()}
+                >
+                  {saving ? "保存中…" : "保存"}
+                </button>
               </div>
-              <div className="field">
-                <label htmlFor="link-desc">描述</label>
-                <textarea
-                  id="link-desc"
-                  className="textarea"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                />
-              </div>
-              <LinkIconField
-                value={form.iconUrl}
-                disabled={saving}
-                onChange={(iconUrl) => setForm({ ...form, iconUrl })}
-              />
-              <div className="field">
-                <label htmlFor="link-sort">排序</label>
-                <input
-                  id="link-sort"
-                  className="input"
-                  type="number"
-                  value={form.sortOrder}
-                  onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
-                />
-              </div>
-              {error ? <div className="field error">{error}</div> : null}
-            </div>
-            <div className="drawer-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={saving}
-                onClick={() => setDrawerOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={saving}
-                onClick={() => void save()}
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
             </div>
           </div>
         </>

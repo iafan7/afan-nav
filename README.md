@@ -16,7 +16,7 @@
 | 分类管理 | `/admin/categories` |
 | 搜索引擎 | `/admin/search-engines` |
 | 站点设置 | `/admin/settings`（含安全设置改密） |
-| 导出备份 | `/admin/export` |
+| 导出 / 导入备份 | `/admin/export` |
 
 - 管理员：`ADMIN_*` 仅用于**首次初始化**；之后以 SQLite 为准，后台改密立即生效（密码规则 6～18 位）
 - 链接图标：`/data/uploads/link-icons`，公开读取 `/api/uploads/link-icons/<file>`

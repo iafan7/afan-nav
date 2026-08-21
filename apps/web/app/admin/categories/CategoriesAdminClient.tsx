@@ -148,7 +148,7 @@ export function CategoriesAdminClient({ initialCategories }: { initialCategories
     <div>
       <AdminPageHeader
         title="分类管理"
-        description="控制分类在前台是否展示（显示 / 隐藏）。"
+        description="公开分类所有人可见；私有分类仅管理员登录后在前台可见。"
         badge={hasData ? <span className="admin-page-badge">{rows.length}</span> : null}
         actions={
           <button type="button" className="btn btn-primary" onClick={openCreate}>
@@ -168,7 +168,7 @@ export function CategoriesAdminClient({ initialCategories }: { initialCategories
               <thead>
                 <tr>
                   <th>名称</th>
-                  <th>前台显示</th>
+                  <th>可见性</th>
                   <th>排序</th>
                   <th>操作</th>
                 </tr>
@@ -209,7 +209,7 @@ export function CategoriesAdminClient({ initialCategories }: { initialCategories
                 <div className="admin-mobile-card-title">{row.name}</div>
                 <dl className="admin-mobile-meta">
                   <div>
-                    <dt>前台显示</dt>
+                    <dt>可见性</dt>
                     <dd>
                       <span className={`tag ${visibilityTagClass(row.visibility)}`}>
                         {visibilityLabel(row.visibility)}
@@ -266,7 +266,7 @@ export function CategoriesAdminClient({ initialCategories }: { initialCategories
                 />
               </div>
               <div className="field">
-                <label htmlFor="cat-vis">前台显示 *</label>
+                <label htmlFor="cat-vis">可见性 *</label>
                 <select
                   id="cat-vis"
                   className="select"
@@ -275,9 +275,12 @@ export function CategoriesAdminClient({ initialCategories }: { initialCategories
                     setForm({ ...form, visibility: e.target.value as "public" | "private" })
                   }
                 >
-                  <option value="public">显示</option>
-                  <option value="private">隐藏</option>
+                  <option value="public">公开</option>
+                  <option value="private">私有（仅管理员可见）</option>
                 </select>
+                <p className="admin-form-hint" style={{ marginTop: 6 }}>
+                  私有分类不会对未登录访客展示；管理员登录后前台可见。
+                </p>
               </div>
               <div className="field">
                 <label htmlFor="cat-sort">排序</label>

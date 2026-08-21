@@ -20,7 +20,7 @@ const NAV = [
   { id: "categories", label: "分类管理", href: "/admin/categories", icon: <IconFolders size={17} /> },
   { id: "settings", label: "站点设置", href: "/admin/settings", icon: <IconSettings size={17} /> },
   { id: "engines", label: "搜索引擎", href: "/admin/search-engines", icon: <IconEngine size={17} /> },
-  { id: "export", label: "导出备份", href: "/admin/export", icon: <IconExport size={17} /> },
+  { id: "export", label: "备份导入", href: "/admin/export", icon: <IconExport size={17} /> },
 ];
 
 export function AdminShell({ siteName, children }: { siteName: string; children: ReactNode }) {
