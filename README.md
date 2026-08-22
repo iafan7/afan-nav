@@ -33,12 +33,20 @@ cd apps/web && pnpm install && pnpm dev
 
 ## Docker 部署
 
-详见 `ops/DEPLOY.md`。仓库根目录仅保留一份正式 Compose：
+详见 `ops/DEPLOY.md`。正式环境**拉取 GHCR 镜像**（无需在服务器编译）：
 
 ```bash
-cp .env.example .env   # 可直接使用示例默认值快速启动
-mkdir -p data && chmod 777 data
-docker compose up -d --build
+cp .env.example .env
+mkdir -p data && sudo chown -R 1001:1001 data
+docker compose pull && docker compose up -d
+```
+
+镜像：`ghcr.io/iafan7/afan-nav:latest`（`main` 推送后由 GitHub Actions 自动构建发布）。
+
+本地从源码构建：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 未提供环境变量时，Compose 使用与 `.env.example` 相同的默认值。

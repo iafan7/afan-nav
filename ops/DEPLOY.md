@@ -1,16 +1,35 @@
 # LinkNest 部署说明
 
-## 快速部署
+## 快速部署（推荐：拉取镜像）
+
+镜像由 GitHub Actions 推送到 **GHCR**：`ghcr.io/iafan7/afan-nav:latest`（`main` 分支推送后更新）。
 
 ```bash
 cd /path/to/afan-nav
-cp .env.example .env   # 可直接使用示例默认值；公网请再改 SESSION_SECRET / COOKIE_SECURE
-mkdir -p data && chmod 777 data   # 或: sudo chown -R 1001:1001 data
+git pull origin main
+cp .env.example .env   # 公网请改 SESSION_SECRET / COOKIE_SECURE
+mkdir -p data && sudo chown -R 1001:1001 data   # 或 chmod 777 data
 
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-- Compose：仓库根目录 `docker-compose.yml`（唯一正式部署配置）
+首次若镜像为 **私有包**，需登录 GHCR（Personal Access Token 需 `read:packages`）：
+
+```bash
+echo "<GITHUB_PAT>" | docker login ghcr.io -u <GitHub用户名> --password-stdin
+docker compose pull && docker compose up -d
+```
+
+或在 GitHub → Packages → `afan-nav` → **Package settings → Change visibility → Public**，服务器即可匿名 `pull`。
+
+### 从源码构建（开发 / 无镜像时）
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+- Compose：仓库根目录 `docker-compose.yml`（正式部署配置）
 - 环境变量：根目录 `.env`（不入库；由 `.env.example` 复制）。未设置时 Compose 使用内置默认值
 - 数据目录：`./data` → 容器 `/data`（SQLite + `uploads/link-icons`）
 - 容器名：`linknest`
@@ -63,13 +82,17 @@ docker compose stop
 docker compose start
 ```
 
-## 重建容器（保留数据）
+## 更新版本（保留数据）
 
 **禁止**对有数据环境执行 `docker compose down -v`、`volume prune`、`system prune --volumes`。
 
 ```bash
-docker compose up -d --force-recreate --build
+git pull origin main
+docker compose pull
+docker compose up -d --force-recreate
 ```
+
+固定版本可在 `.env` 设置，例如 `LINKNEST_IMAGE=ghcr.io/iafan7/afan-nav:v1.0.0`。
 
 ## 备份与恢复
 

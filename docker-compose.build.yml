@@ -1,0 +1,7 @@
+# Local / CI source build override.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  linknest:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
