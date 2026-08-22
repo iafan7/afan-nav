@@ -5,6 +5,8 @@ import { getSettings } from "@/lib/services/settings";
 
 const globalForScheduler = globalThis as unknown as {
   __linkCheckSchedulerStarted?: boolean;
+  /** True while a scheduled batch is in flight (blocks overlapping ticks). */
+  __linkCheckSchedulerBusy?: boolean;
 };
 
 function sleep(ms: number) {
@@ -14,6 +16,11 @@ function sleep(ms: number) {
 /**
  * In-process background loop: reads interval from site_settings and checks all links.
  * Runs for the lifetime of the Node server (Docker / next start). Independent of admin UI.
+ *
+ * Overlap guards:
+ * - `__linkCheckSchedulerStarted` — only one loop per process
+ * - `__linkCheckSchedulerBusy` — skip tick if previous batch still running
+ * - `checkAndPersistAllLinks` single-flight — shares work with admin check-all
  */
 export function startLinkCheckScheduler() {
   if (globalForScheduler.__linkCheckSchedulerStarted) return;
@@ -37,15 +44,28 @@ export function startLinkCheckScheduler() {
           continue;
         }
 
-        console.info(`[link-check] batch start (interval=${minutes}m)`);
-        const results = await checkAndPersistAllLinks();
-        const valid = results.filter((r) => r.checkStatus === "valid").length;
-        console.info(
-          `[link-check] batch done: ${results.length} links, ${valid} valid, ${results.length - valid} invalid`,
-        );
+        if (globalForScheduler.__linkCheckSchedulerBusy) {
+          console.info("[link-check] skip tick — previous batch still running");
+          await sleep(Math.max(1, minutes) * 60_000);
+          continue;
+        }
+
+        globalForScheduler.__linkCheckSchedulerBusy = true;
+        try {
+          console.info(`[link-check] batch start (interval=${minutes}m)`);
+          const results = await checkAndPersistAllLinks();
+          const valid = results.filter((r) => r.checkStatus === "valid").length;
+          const broken = results.filter((r) => r.checkStatus === "invalid").length;
+          console.info(
+            `[link-check] batch done: ${results.length} links, ${valid} valid, ${broken} invalid`,
+          );
+        } finally {
+          globalForScheduler.__linkCheckSchedulerBusy = false;
+        }
 
         await sleep(Math.max(1, minutes) * 60_000);
       } catch (error) {
+        globalForScheduler.__linkCheckSchedulerBusy = false;
         console.error("[link-check] batch failed", error);
         await sleep(60_000);
       }

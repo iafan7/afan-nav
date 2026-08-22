@@ -33,6 +33,8 @@ export function LinkCard({ title, url, description, iconUrl }: Props) {
             alt=""
             width={32}
             height={32}
+            loading="lazy"
+            decoding="async"
             onError={() => setFailed(true)}
           />
         ) : (

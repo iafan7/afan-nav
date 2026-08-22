@@ -27,9 +27,11 @@ export function AdminSiteCell({ title, description, iconUrl }: Props) {
         <span className="admin-site-title" title={title}>
           {title}
         </span>
-        <span className="admin-site-desc" title={description?.trim() || undefined}>
-          {description?.trim() || "—"}
-        </span>
+        {description?.trim() ? (
+          <span className="admin-site-desc" title={description.trim()}>
+            {description.trim()}
+          </span>
+        ) : null}
       </span>
     </div>
   );

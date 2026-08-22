@@ -5,14 +5,61 @@ import { getDb } from "../db/client";
 import { categories, links } from "../db/schema";
 import { ensureReady } from "../ready";
 import type { linkCreateSchema, linkUpdateSchema } from "../validators/link";
-import { checkLinkReachable } from "./check-link";
+import {
+  checkLinkReachable,
+  mapHealthToDbStatus,
+  type CheckErrorKind,
+  type LinkHealth,
+} from "./check-link";
 import { ServiceError } from "./categories";
 
 function nowIso() {
   return new Date().toISOString();
 }
 
+/** Parallel outbound checks; keep modest to avoid socket storms. */
+const LINK_CHECK_CONCURRENCY = 5;
+
+type LinkCheckResult = {
+  id: string;
+  ok: boolean;
+  checkStatus: "valid" | "invalid" | null;
+  checkMessage: string;
+  checkedAt: string;
+  latencyMs: number | null;
+  status: number | null;
+  finalUrl: string;
+  message: string;
+  health: LinkHealth;
+  errorKind: CheckErrorKind;
+};
+
+const globalForLinkCheck = globalThis as unknown as {
+  __linkCheckBatchInflight?: Promise<LinkCheckResult[]>;
+};
+
 export type LinkCheckStatus = "valid" | "invalid" | null;
+
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function run() {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]!, index);
+    }
+  }
+  const pool = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(Array.from({ length: pool }, () => run()));
+  return results;
+}
 
 export async function listLinks(categoryId?: string) {
   await ensureReady();
@@ -51,6 +98,9 @@ export async function createLink(input: z.infer<typeof linkCreateSchema>) {
     checkStatus: null as LinkCheckStatus,
     checkMessage: null as string | null,
     checkedAt: null as string | null,
+    checkHttpStatus: null as number | null,
+    checkLatencyMs: null as number | null,
+    checkError: null as string | null,
     createdAt: now,
     updatedAt: now,
   };
@@ -91,7 +141,14 @@ export async function updateLink(id: string, input: z.infer<typeof linkUpdateSch
     sortOrder: input.sortOrder ?? current.sortOrder,
     updatedAt: nowIso(),
     ...(urlChanged
-      ? { checkStatus: null as LinkCheckStatus, checkMessage: null, checkedAt: null }
+      ? {
+          checkStatus: null as LinkCheckStatus,
+          checkMessage: null,
+          checkedAt: null,
+          checkHttpStatus: null,
+          checkLatencyMs: null,
+          checkError: null,
+        }
       : {}),
   };
   db.update(links).set(updated).where(eq(links.id, id)).run();
@@ -108,42 +165,87 @@ export async function deleteLink(id: string) {
   db.delete(links).where(eq(links.id, id)).run();
 }
 
-export async function checkAndPersistLink(id: string) {
+export async function checkAndPersistLink(
+  id: string,
+  preloaded?: { id: string; url: string; checkStatus?: LinkCheckStatus },
+): Promise<LinkCheckResult> {
   await ensureReady();
   const db = getDb();
-  const current = db.select().from(links).where(eq(links.id, id)).get();
+  const current =
+    preloaded && preloaded.id === id
+      ? preloaded
+      : db
+          .select({
+            id: links.id,
+            url: links.url,
+            checkStatus: links.checkStatus,
+          })
+          .from(links)
+          .where(eq(links.id, id))
+          .get();
   if (!current) {
     throw new ServiceError("链接不存在", 404);
   }
 
-  let checkStatus: "valid" | "invalid" = "invalid";
+  const previousStatus: LinkCheckStatus =
+    current.checkStatus === "valid" || current.checkStatus === "invalid"
+      ? current.checkStatus
+      : null;
+
+  let checkStatus: LinkCheckStatus = previousStatus;
   let checkMessage = "检测失败";
   let latencyMs: number | null = null;
   let httpStatus: number | null = null;
+  let checkError: CheckErrorKind = null;
+  let health: LinkHealth = "unchecked";
   let finalUrl = current.url;
+  let ok = false;
 
   try {
     const result = await checkLinkReachable(current.url);
-    checkStatus = result.ok ? "valid" : "invalid";
+    health = result.health;
     checkMessage = result.message;
     latencyMs = result.latencyMs;
     httpStatus = result.status;
     finalUrl = result.finalUrl;
+    checkError = result.errorKind;
+    // Probe failures must not flip the link to "broken"
+    if (result.health === "unchecked") {
+      checkStatus = previousStatus;
+      ok = previousStatus === "valid";
+    } else {
+      checkStatus = mapHealthToDbStatus(result.health);
+      ok = result.ok;
+    }
   } catch (error) {
+    health = "unchecked";
+    checkError = "connection_error";
     if (error instanceof ServiceError) {
       checkMessage = error.message;
+      if (/重定向|内网|本地/.test(error.message)) {
+        checkError = "redirect_error";
+      }
     }
+    checkStatus = previousStatus;
+    ok = previousStatus === "valid";
   }
 
   const checkedAt = nowIso();
   db.update(links)
-    .set({ checkStatus, checkMessage, checkedAt })
+    .set({
+      checkStatus,
+      checkMessage,
+      checkedAt,
+      checkHttpStatus: httpStatus,
+      checkLatencyMs: latencyMs,
+      checkError,
+    })
     .where(eq(links.id, id))
     .run();
 
   return {
     id,
-    ok: checkStatus === "valid",
+    ok,
     checkStatus,
     checkMessage,
     checkedAt,
@@ -151,17 +253,47 @@ export async function checkAndPersistLink(id: string) {
     status: httpStatus,
     finalUrl,
     message: checkMessage,
+    health,
+    errorKind: checkError,
   };
 }
 
-/** Sequentially check all links (used by admin auto-refresh). */
-export async function checkAndPersistAllLinks() {
-  await ensureReady();
-  const db = getDb();
-  const rows = db.select({ id: links.id }).from(links).orderBy(asc(links.sortOrder)).all();
-  const results = [];
-  for (const row of rows) {
-    results.push(await checkAndPersistLink(row.id));
+/**
+ * Check all links with bounded concurrency.
+ * Single-flight: overlapping scheduler + admin check-all share one in-flight batch.
+ */
+export async function checkAndPersistAllLinks(): Promise<LinkCheckResult[]> {
+  if (globalForLinkCheck.__linkCheckBatchInflight) {
+    return globalForLinkCheck.__linkCheckBatchInflight;
   }
-  return results;
+
+  globalForLinkCheck.__linkCheckBatchInflight = (async () => {
+    try {
+      await ensureReady();
+      const db = getDb();
+      const rows = db
+        .select({
+          id: links.id,
+          url: links.url,
+          checkStatus: links.checkStatus,
+        })
+        .from(links)
+        .orderBy(asc(links.sortOrder))
+        .all();
+      return mapPool(rows, LINK_CHECK_CONCURRENCY, (row) =>
+        checkAndPersistLink(row.id, {
+          id: row.id,
+          url: row.url,
+          checkStatus:
+            row.checkStatus === "valid" || row.checkStatus === "invalid"
+              ? row.checkStatus
+              : null,
+        }),
+      );
+    } finally {
+      globalForLinkCheck.__linkCheckBatchInflight = undefined;
+    }
+  })();
+
+  return globalForLinkCheck.__linkCheckBatchInflight;
 }

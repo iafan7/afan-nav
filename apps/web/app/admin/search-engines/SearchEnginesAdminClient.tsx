@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { IconGrip } from "@/components/icons";
 import { SoftRefreshHint } from "@/components/LoadingStates";
 import { useToast } from "@/components/Toast";
 
@@ -28,7 +29,6 @@ export function SearchEnginesAdminClient({
   defaultSearchEngineId,
 }: {
   initialEngines: EngineRow[];
-  /** Sole authority from site_settings — badge/selection must use this. */
   defaultSearchEngineId: string | null;
 }) {
   const router = useRouter();
@@ -43,6 +43,10 @@ export function SearchEnginesAdminClient({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
 
   useEffect(() => {
     setRows(initialEngines);
@@ -56,9 +60,7 @@ export function SearchEnginesAdminClient({
   }
 
   function refresh() {
-    startTransition(() => {
-      router.refresh();
-    });
+    startTransition(() => router.refresh());
   }
 
   function openCreate() {
@@ -105,11 +107,70 @@ export function SearchEnginesAdminClient({
         return;
       }
       setDrawerOpen(false);
-      toast(editing ? "已更新引擎" : "已创建引擎");
+      toast("搜索引擎已保存");
       refresh();
     } finally {
       setSaving(false);
     }
+  }
+
+  async function setAsDefault(id: string) {
+    if (settingDefaultId || isDefaultEngine(id)) return;
+    setSettingDefaultId(id);
+    try {
+      const res = await fetch(`/api/admin/search-engines/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDefault: true }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast(data.error ?? "设置失败", "error");
+        return;
+      }
+      setDefaultId(id);
+      toast("已设为默认搜索引擎");
+      refresh();
+    } finally {
+      setSettingDefaultId(null);
+    }
+  }
+
+  async function persistOrder(nextRows: EngineRow[]) {
+    setReordering(true);
+    try {
+      await Promise.all(
+        nextRows.map((row, index) =>
+          fetch(`/api/admin/search-engines/${row.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sortOrder: index }),
+          }),
+        ),
+      );
+      toast("搜索引擎顺序已更新");
+      refresh();
+    } catch {
+      toast("排序保存失败", "error");
+      setRows(initialEngines);
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  function onDrop(targetId: string) {
+    if (!dragId || dragId === targetId || reordering) return;
+    const from = rows.findIndex((r) => r.id === dragId);
+    const to = rows.findIndex((r) => r.id === targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...rows];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved!);
+    const withOrder = next.map((r, i) => ({ ...r, sortOrder: i }));
+    setRows(withOrder);
+    setDragId(null);
+    setDragOverId(null);
+    void persistOrder(withOrder);
   }
 
   async function confirmDelete() {
@@ -123,7 +184,7 @@ export function SearchEnginesAdminClient({
         setDeleteId(null);
         return;
       }
-      toast("已删除");
+      toast("搜索引擎已删除");
       setDeleteId(null);
       refresh();
     } finally {
@@ -141,7 +202,7 @@ export function SearchEnginesAdminClient({
     <div>
       <AdminPageHeader
         title="搜索引擎"
-        description="默认引擎以站点设置为准；删除默认引擎时会自动切换到剩余第一个。"
+        description="拖拽调整顺序；可直接设为默认，无需进入编辑。"
         badge={hasData ? <span className="admin-page-badge">{rows.length}</span> : null}
         actions={
           <button type="button" className="btn btn-primary" onClick={openCreate}>
@@ -150,7 +211,7 @@ export function SearchEnginesAdminClient({
         }
       />
 
-      <SoftRefreshHint show={phase === "refreshing"} />
+      <SoftRefreshHint show={phase === "refreshing" || reordering} />
 
       {phase === "empty" ? (
         <EmptyState title="暂无引擎" description="至少需要一个搜索引擎供前台外搜使用。" />
@@ -162,34 +223,84 @@ export function SearchEnginesAdminClient({
             <table className="table">
               <thead>
                 <tr>
+                  <th style={{ width: 40 }} />
                   <th>名称</th>
-                  <th>模板</th>
-                  <th>排序</th>
+                  <th>搜索模板</th>
                   <th>默认</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id}>
+                  <tr
+                    key={row.id}
+                    className={`admin-drag-row${dragId === row.id ? " is-dragging" : ""}${
+                      dragOverId === row.id ? " is-drag-over" : ""
+                    }`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverId(row.id);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      onDrop(row.id);
+                    }}
+                  >
+                    <td>
+                      <button
+                        type="button"
+                        className="admin-drag-handle"
+                        draggable
+                        aria-label={`拖拽排序 ${row.name}`}
+                        onDragStart={() => setDragId(row.id)}
+                        onDragEnd={() => {
+                          setDragId(null);
+                          setDragOverId(null);
+                        }}
+                      >
+                        <IconGrip size={14} />
+                      </button>
+                    </td>
                     <td>{row.name}</td>
                     <td>
-                      <div className="admin-url-cell">
+                      <div className="admin-url-cell" style={{ maxWidth: 280 }}>
                         <span className="admin-url-text" title={row.urlTemplate}>
-                          {row.urlTemplate}
+                          {row.urlTemplate.includes("{query}") ? (
+                            <>
+                              {row.urlTemplate.split("{query}")[0]}
+                              <mark className="admin-query-mark">{"{query}"}</mark>
+                              {row.urlTemplate.split("{query}").slice(1).join("{query}")}
+                            </>
+                          ) : (
+                            row.urlTemplate
+                          )}
                         </span>
                       </div>
                     </td>
-                    <td>{row.sortOrder}</td>
-                    <td>{isDefaultEngine(row.id) ? <span className="tag tag-default">默认</span> : null}</td>
                     <td>
-                      <div className="admin-row-actions">
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="radio"
+                          name="default-engine"
+                          checked={isDefaultEngine(row.id)}
+                          disabled={settingDefaultId != null}
+                          onChange={() => void setAsDefault(row.id)}
+                        />
+                        {isDefaultEngine(row.id) ? (
+                          <span className="tag tag-default">默认</span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>设为默认</span>
+                        )}
+                      </label>
+                    </td>
+                    <td>
+                      <div className="admin-row-actions-quiet">
                         <button type="button" className="btn btn-secondary" onClick={() => openEdit(row)}>
                           编辑
                         </button>
                         <button
                           type="button"
-                          className="btn btn-danger-ghost"
+                          className="btn btn-secondary"
                           onClick={() => setDeleteId(row.id)}
                         >
                           删除
@@ -211,19 +322,23 @@ export function SearchEnginesAdminClient({
                 <p className="admin-mobile-url" title={row.urlTemplate}>
                   {row.urlTemplate}
                 </p>
-                <dl className="admin-mobile-meta">
-                  <div>
-                    <dt>排序</dt>
-                    <dd>{row.sortOrder}</dd>
-                  </div>
-                </dl>
                 <div className="admin-mobile-actions">
+                  {!isDefaultEngine(row.id) ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={settingDefaultId != null}
+                      onClick={() => void setAsDefault(row.id)}
+                    >
+                      设为默认
+                    </button>
+                  ) : null}
                   <button type="button" className="btn btn-secondary" onClick={() => openEdit(row)}>
                     编辑
                   </button>
                   <button
                     type="button"
-                    className="btn btn-danger-ghost"
+                    className="btn btn-secondary"
                     onClick={() => setDeleteId(row.id)}
                   >
                     删除
@@ -238,74 +353,81 @@ export function SearchEnginesAdminClient({
       {drawerOpen ? (
         <>
           <div className="overlay" onClick={() => !saving && setDrawerOpen(false)} />
-          <div className="drawer" role="dialog" aria-modal="true">
-            <div className="drawer-header">
-              <strong>{editing ? "编辑引擎" : "新建引擎"}</strong>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={saving}
-                onClick={() => setDrawerOpen(false)}
-              >
-                关闭
-              </button>
-            </div>
-            <div className="drawer-body">
-              <div className="field">
-                <label htmlFor="eng-name">名称 *</label>
-                <input
-                  id="eng-name"
-                  className="input"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
+          <div className="form-dialog" role="dialog" aria-modal="true" aria-labelledby="eng-form-title">
+            <div className="form-dialog-panel form-dialog-panel--sm">
+              <div className="form-dialog-header">
+                <strong id="eng-form-title">{editing ? "编辑引擎" : "新建引擎"}</strong>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={saving}
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  关闭
+                </button>
               </div>
-              <div className="field">
-                <label htmlFor="eng-tpl">URL 模板 *（须含 {"{query}"}）</label>
-                <input
-                  id="eng-tpl"
-                  className="input"
-                  value={form.urlTemplate}
-                  onChange={(e) => setForm({ ...form, urlTemplate: e.target.value })}
-                />
+              <div className="form-dialog-body">
+                <div className="field">
+                  <label htmlFor="eng-name">名称 *</label>
+                  <input
+                    id="eng-name"
+                    className="input"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="eng-tpl">搜索模板 *（须含 {"{query}"}）</label>
+                  <input
+                    id="eng-tpl"
+                    className="input"
+                    value={form.urlTemplate}
+                    onChange={(e) => setForm({ ...form, urlTemplate: e.target.value })}
+                  />
+                </div>
+                <div className="admin-form-grid-2">
+                  <div className="field">
+                    <label htmlFor="eng-sort">排序</label>
+                    <input
+                      id="eng-sort"
+                      className="input"
+                      type="number"
+                      value={form.sortOrder}
+                      onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
+                    />
+                  </div>
+                  <label
+                    className="field"
+                    style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 22 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.isDefault}
+                      onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+                    />
+                    设为默认
+                  </label>
+                </div>
+                {error ? <div className="field error">{error}</div> : null}
               </div>
-              <div className="field">
-                <label htmlFor="eng-sort">排序</label>
-                <input
-                  id="eng-sort"
-                  className="input"
-                  type="number"
-                  value={form.sortOrder}
-                  onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
-                />
+              <div className="form-dialog-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={saving}
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={saving}
+                  onClick={() => void save()}
+                >
+                  {saving ? "保存中…" : "保存"}
+                </button>
               </div>
-              <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-                <input
-                  type="checkbox"
-                  checked={form.isDefault}
-                  onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
-                />
-                设为默认
-              </label>
-              {error ? <div className="field error">{error}</div> : null}
-            </div>
-            <div className="drawer-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={saving}
-                onClick={() => setDrawerOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={saving}
-                onClick={() => void save()}
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
             </div>
           </div>
         </>

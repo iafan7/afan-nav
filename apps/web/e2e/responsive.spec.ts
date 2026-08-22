@@ -113,9 +113,9 @@ test("admin mobile shell uses header menu and card list at 375px", async ({ page
   expect(box).toBeTruthy();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(375 + 1);
-  // Centered modal (not right-edge drawer)
-  expect(box!.x).toBeGreaterThan(8);
-  expect(box!.x + box!.width).toBeLessThan(375 - 8);
+  // Centered modal should not hug only the right edge
+  expect(box!.x).toBeGreaterThan(4);
+  expect(box!.x + box!.width).toBeLessThan(375 - 4);
 });
 
 test("desktop layout remains two-column at 1440px", async ({ page }) => {

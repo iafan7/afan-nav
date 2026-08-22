@@ -69,8 +69,10 @@ export function AdminTableSkeleton({ rows = 6 }: { rows?: number }) {
 export function SoftRefreshHint({ show }: { show: boolean }) {
   if (!show) return null;
   return (
-    <div className="soft-refresh" role="status" aria-live="polite">
-      刷新中…
+    <div className="soft-refresh soft-refresh--skeleton" role="status" aria-live="polite" aria-label="刷新中">
+      <span className="sk-block sk-line-lg" />
+      <span className="sk-block sk-line-md" />
+      <span className="sk-block sk-line-sm" />
     </div>
   );
 }

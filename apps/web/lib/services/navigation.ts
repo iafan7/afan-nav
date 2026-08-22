@@ -18,26 +18,37 @@ export async function getPublicNavigation(options?: { includePrivate?: boolean }
     ? allCategories
     : allCategories.filter((cat) => cat.visibility === "public");
 
+  const visibleIds = new Set(visibleCategories.map((c) => c.id));
+
+  // Single query for all links, then group in memory (avoids N+1 per category).
+  const allLinks = db
+    .select()
+    .from(links)
+    .orderBy(asc(links.sortOrder), asc(links.title))
+    .all();
+
+  const linksByCategory = new Map<string, typeof allLinks>();
+  for (const link of allLinks) {
+    if (!visibleIds.has(link.categoryId)) continue;
+    const bucket = linksByCategory.get(link.categoryId);
+    if (bucket) bucket.push(link);
+    else linksByCategory.set(link.categoryId, [link]);
+  }
+
   return {
     categories: visibleCategories.map((cat) => ({
       id: cat.id,
       name: cat.name,
       sortOrder: cat.sortOrder,
       visibility: cat.visibility as "public" | "private",
-      links: db
-        .select()
-        .from(links)
-        .where(eq(links.categoryId, cat.id))
-        .orderBy(asc(links.sortOrder), asc(links.title))
-        .all()
-        .map((link) => ({
-          id: link.id,
-          title: link.title,
-          url: link.url,
-          description: link.description,
-          iconUrl: link.iconUrl,
-          sortOrder: link.sortOrder,
-        })),
+      links: (linksByCategory.get(cat.id) ?? []).map((link) => ({
+        id: link.id,
+        title: link.title,
+        url: link.url,
+        description: link.description,
+        iconUrl: link.iconUrl,
+        sortOrder: link.sortOrder,
+      })),
     })),
   };
 }

@@ -56,6 +56,22 @@ type NavCategory = {
 
 type LoadPhase = "loading" | "refreshing" | "success" | "empty" | "error";
 
+export type PublicHomeSite = {
+  siteName: string;
+  ownerNickname: string;
+  defaultSearchEngineId: string | null;
+  searchEngines: EngineOption[];
+};
+
+export type PublicHomeNavigation = {
+  categories: NavCategory[];
+};
+
+type Props = {
+  initialSite: PublicHomeSite;
+  initialNavigation: PublicHomeNavigation;
+};
+
 function greetingForHour(hour: number) {
   if (hour < 5) return "夜深了";
   if (hour < 12) return "早上好";
@@ -74,18 +90,29 @@ function formatQuoteLine(content: string, author: string | null | undefined) {
   return a ? `${content} — ${a}` : content;
 }
 
-export function PublicHome() {
-  const [siteName, setSiteName] = useState("LinkNest");
-  const [ownerNickname, setOwnerNickname] = useState("阿凡");
-  const [engines, setEngines] = useState<EngineOption[]>([]);
-  const [categories, setCategories] = useState<NavCategory[]>([]);
+function pickEngineId(site: PublicHomeSite, prev: string) {
+  const nextEngines = site.searchEngines ?? [];
+  if (prev && nextEngines.some((e) => e.id === prev)) return prev;
+  const fromSettings =
+    typeof site.defaultSearchEngineId === "string" ? site.defaultSearchEngineId : null;
+  if (fromSettings && nextEngines.some((e) => e.id === fromSettings)) return fromSettings;
+  return nextEngines[0]?.id ?? "";
+}
+
+export function PublicHome({ initialSite, initialNavigation }: Props) {
+  const [siteName, setSiteName] = useState(initialSite.siteName || "LinkNest");
+  const [ownerNickname, setOwnerNickname] = useState(
+    initialSite.ownerNickname?.trim() || "阿凡",
+  );
+  const [engines, setEngines] = useState<EngineOption[]>(initialSite.searchEngines ?? []);
+  const [categories, setCategories] = useState<NavCategory[]>(initialNavigation.categories ?? []);
   /** Exclusive nav selection: "home" or a category id — never both highlighted. */
   const [activeNav, setActiveNav] = useState<"home" | string>("home");
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
-  const [engineId, setEngineId] = useState("");
+  const [engineId, setEngineId] = useState(() => pickEngineId(initialSite, ""));
   const [filter, setFilter] = useState("");
-  const [fetching, setFetching] = useState(true);
+  const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
@@ -102,6 +129,16 @@ export function PublicHome() {
   hasContentRef.current = hasContent;
   const awaitingFirstPaint = fetching && !hasContent;
   const showSkeleton = useDelayedFlag(awaitingFirstPaint, 300);
+
+  // Keep client state aligned when RSC refresh passes new props.
+  useEffect(() => {
+    setSiteName(initialSite.siteName || "LinkNest");
+    setOwnerNickname(initialSite.ownerNickname?.trim() || "阿凡");
+    setEngines(initialSite.searchEngines ?? []);
+    setEngineId((prev) => pickEngineId(initialSite, prev));
+    setCategories(initialNavigation.categories ?? []);
+    setError(null);
+  }, [initialSite, initialNavigation]);
 
   useEffect(() => {
     setGreeting(greetingForHour(new Date().getHours()));
@@ -132,8 +169,8 @@ export function PublicHome() {
         fetch("/api/public/navigation"),
       ]);
       if (!siteRes.ok || !navRes.ok) throw new Error("加载失败");
-      const site = await siteRes.json();
-      const nav = await navRes.json();
+      const site = (await siteRes.json()) as PublicHomeSite;
+      const nav = (await navRes.json()) as PublicHomeNavigation;
       setSiteName(site.siteName || "LinkNest");
       setOwnerNickname(
         typeof site.ownerNickname === "string" && site.ownerNickname.trim()
@@ -142,14 +179,7 @@ export function PublicHome() {
       );
       const nextEngines: EngineOption[] = site.searchEngines ?? [];
       setEngines(nextEngines);
-      setEngineId((prev) => {
-        if (prev && nextEngines.some((e) => e.id === prev)) return prev;
-        // Sole authority: site_settings.defaultSearchEngineId
-        const fromSettings =
-          typeof site.defaultSearchEngineId === "string" ? site.defaultSearchEngineId : null;
-        if (fromSettings && nextEngines.some((e) => e.id === fromSettings)) return fromSettings;
-        return nextEngines[0]?.id ?? "";
-      });
+      setEngineId((prev) => pickEngineId(site, prev));
       setCategories(nav.categories ?? []);
       setError(null);
     } catch {
@@ -160,10 +190,6 @@ export function PublicHome() {
       setFetching(false);
     }
   }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const filterQ = filter.trim().toLowerCase();
 

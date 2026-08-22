@@ -12,8 +12,15 @@ export type NavItem = {
   icon?: ReactNode;
 };
 
-type Props = {
+export type NavGroup = {
+  id: string;
+  label?: string;
   items: NavItem[];
+};
+
+type Props = {
+  items?: NavItem[];
+  groups?: NavGroup[];
   /** Optional section label. Omit to show menu directly under the logo. */
   title?: string;
   mobileLabel?: string;
@@ -27,6 +34,7 @@ type Props = {
 
 export function SideNav({
   items,
+  groups,
   title,
   mobileLabel = "菜单",
   footer,
@@ -46,6 +54,10 @@ export function SideNav({
   }
 
   const ariaLabel = title?.trim() || mobileLabel;
+  const resolvedGroups: NavGroup[] =
+    groups && groups.length > 0
+      ? groups
+      : [{ id: "default", items: items ?? [] }];
 
   function isActive(item: NavItem) {
     if (activeId != null) return item.id === activeId;
@@ -53,39 +65,48 @@ export function SideNav({
     return pathname === item.href || pathname.startsWith(`${item.href}/`);
   }
 
+  function renderItem(item: NavItem) {
+    const active = isActive(item);
+    const className = `side-nav-item${active ? " is-active" : ""}`;
+    const content = (
+      <>
+        {item.icon ? <span className="side-nav-icon">{item.icon}</span> : null}
+        <span className="side-nav-label">{item.label}</span>
+      </>
+    );
+    if (item.href) {
+      return (
+        <Link key={item.id} href={item.href} className={className} onClick={() => setOpen(false)}>
+          {content}
+        </Link>
+      );
+    }
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className={className}
+        onClick={() => {
+          item.onClick?.();
+          setOpen(false);
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
   const list = (
     <nav className="side-nav-list" aria-label={ariaLabel}>
-      {items.length === 0 && emptyHint ? <div className="side-nav-empty">{emptyHint}</div> : null}
-      {items.map((item) => {
-        const active = isActive(item);
-        const className = `side-nav-item${active ? " is-active" : ""}`;
-        const content = (
-          <>
-            {item.icon ? <span className="side-nav-icon">{item.icon}</span> : null}
-            <span className="side-nav-label">{item.label}</span>
-          </>
-        );
-        if (item.href) {
-          return (
-            <Link key={item.id} href={item.href} className={className} onClick={() => setOpen(false)}>
-              {content}
-            </Link>
-          );
-        }
-        return (
-          <button
-            key={item.id}
-            type="button"
-            className={className}
-            onClick={() => {
-              item.onClick?.();
-              setOpen(false);
-            }}
-          >
-            {content}
-          </button>
-        );
-      })}
+      {resolvedGroups.every((g) => g.items.length === 0) && emptyHint ? (
+        <div className="side-nav-empty">{emptyHint}</div>
+      ) : null}
+      {resolvedGroups.map((group) => (
+        <div key={group.id} className="side-nav-group">
+          {group.label ? <div className="side-nav-group-label">{group.label}</div> : null}
+          {group.items.map(renderItem)}
+        </div>
+      ))}
     </nav>
   );
 

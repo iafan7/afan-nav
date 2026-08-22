@@ -306,6 +306,9 @@ export async function importSnapshot(snapshot: ExportSnapshotInput) {
             checkStatus: link.checkStatus ?? null,
             checkMessage: link.checkMessage ?? null,
             checkedAt: link.checkedAt ?? null,
+            checkHttpStatus: link.checkHttpStatus ?? null,
+            checkLatencyMs: link.checkLatencyMs ?? null,
+            checkError: link.checkError ?? null,
             createdAt: link.createdAt,
             updatedAt: link.updatedAt,
           })

@@ -17,6 +17,10 @@ export async function POST() {
         checkStatus: r.checkStatus,
         checkMessage: r.checkMessage,
         checkedAt: r.checkedAt,
+        health: r.health,
+        status: r.status,
+        latencyMs: r.latencyMs,
+        errorKind: r.errorKind,
       })),
     });
   } catch (error) {

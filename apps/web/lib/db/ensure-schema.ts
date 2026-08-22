@@ -58,6 +58,9 @@ export function ensureSchema() {
       check_status TEXT,
       check_message TEXT,
       checked_at TEXT,
+      check_http_status INTEGER,
+      check_latency_ms INTEGER,
+      check_error TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -88,6 +91,9 @@ export function ensureSchema() {
   ensureColumn("links", "check_status", `check_status TEXT`);
   ensureColumn("links", "check_message", `check_message TEXT`);
   ensureColumn("links", "checked_at", `checked_at TEXT`);
+  ensureColumn("links", "check_http_status", `check_http_status INTEGER`);
+  ensureColumn("links", "check_latency_ms", `check_latency_ms INTEGER`);
+  ensureColumn("links", "check_error", `check_error TEXT`);
 
   const adminUsernameAdded = ensureColumn(
     "admin_credentials",
@@ -97,6 +103,8 @@ export function ensureSchema() {
   ensureColumn("admin_credentials", "auth_version", `auth_version INTEGER NOT NULL DEFAULT 1`);
   ensureColumn("admin_credentials", "created_at", `created_at TEXT`);
   ensureColumn("admin_credentials", "password_changed_at", `password_changed_at TEXT`);
+
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS links_category_id_idx ON links(category_id)`);
 
   return { adminUsernameAdded };
 }

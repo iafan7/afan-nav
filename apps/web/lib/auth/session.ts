@@ -44,6 +44,21 @@ export async function getAdminAuthVersion(): Promise<number> {
   return admin?.authVersion ?? 1;
 }
 
+/** True when the iron-session cookie is present (does not validate auth_version). */
+export async function hasSessionCookie(): Promise<boolean> {
+  const jar = await cookies();
+  return Boolean(jar.get(getSessionOptions().cookieName)?.value);
+}
+
+/**
+ * Like requireAdmin, but skips iron-session decrypt + auth_version DB read when no cookie.
+ * Use on hot public paths (home / public navigation).
+ */
+export async function requireAdminIfSessionCookie() {
+  if (!(await hasSessionCookie())) return null;
+  return requireAdmin();
+}
+
 export async function requireAdmin() {
   const session = await getSession();
   if (!session.isAdmin) {

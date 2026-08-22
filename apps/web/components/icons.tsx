@@ -240,6 +240,29 @@ export function IconMenu({ className, size = 18 }: IconProps) {
   );
 }
 
+export function IconMore({ className, size = 16 }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
+    </svg>
+  );
+}
+
+export function IconGrip({ className, size = 16 }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="9" cy="7" r="1.4" />
+      <circle cx="15" cy="7" r="1.4" />
+      <circle cx="9" cy="12" r="1.4" />
+      <circle cx="15" cy="12" r="1.4" />
+      <circle cx="9" cy="17" r="1.4" />
+      <circle cx="15" cy="17" r="1.4" />
+    </svg>
+  );
+}
+
 /** Distinct category glyphs (star / book / tools / palette / wrench / cloud) */
 const CATEGORY_ICONS: Array<(size: number, className?: string) => ReactNode> = [
   (size, className) => (

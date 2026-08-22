@@ -43,10 +43,16 @@ export const links = sqliteTable("links", {
   description: text("description"),
   iconUrl: text("icon_url"),
   sortOrder: integer("sort_order").notNull().default(0),
-  /** null = never checked; valid | invalid */
+  /** null = never checked / probe inconclusive; valid | invalid (maps from health) */
   checkStatus: text("check_status", { enum: ["valid", "invalid"] }),
   checkMessage: text("check_message"),
   checkedAt: text("checked_at"),
+  /** Last HTTP status from probe; null if transport failure. */
+  checkHttpStatus: integer("check_http_status"),
+  /** Round-trip latency of last probe in ms. */
+  checkLatencyMs: integer("check_latency_ms"),
+  /** Probe error kind when health is unchecked (timeout, dns_error, …). */
+  checkError: text("check_error"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

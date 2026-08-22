@@ -38,7 +38,7 @@ test("login and create public category + link then export", async ({ page }) => 
   await page.keyboard.press("Escape");
   await expect(page.locator(".overlay")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "备份导入" }).click();
+  await page.getByRole("link", { name: "数据导入导出" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出 JSON" }).click();
   const download = await downloadPromise;

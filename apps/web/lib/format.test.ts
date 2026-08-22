@@ -12,9 +12,8 @@ describe("formatDateTime", () => {
     expect(formatDateTime("not-a-date")).toBe("—");
   });
 
-  it("formats a valid ISO timestamp", () => {
+  it("formats a valid ISO timestamp as YYYY/MM/DD HH:mm", () => {
     const formatted = formatDateTime("2026-07-19T12:34:00.000Z");
-    expect(formatted).not.toBe("—");
-    expect(formatted.length).toBeGreaterThan(0);
+    expect(formatted).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/);
   });
 });

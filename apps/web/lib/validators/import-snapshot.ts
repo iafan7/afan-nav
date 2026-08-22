@@ -42,6 +42,9 @@ const linkSchema = z.object({
   checkStatus: z.enum(["valid", "invalid"]).nullable().optional(),
   checkMessage: z.string().max(500).nullable().optional(),
   checkedAt: isoString.nullable().optional(),
+  checkHttpStatus: z.number().int().nullable().optional(),
+  checkLatencyMs: z.number().int().nullable().optional(),
+  checkError: z.string().max(64).nullable().optional(),
   createdAt: isoString,
   updatedAt: isoString,
 });

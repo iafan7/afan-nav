@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AppShell } from "@/components/layout/AppShell";
-import { SideNav } from "@/components/layout/SideNav";
+import { SideNav, type NavGroup } from "@/components/layout/SideNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   IconEngine,
@@ -15,12 +15,45 @@ import {
   IconSettings,
 } from "@/components/icons";
 
-const NAV = [
-  { id: "links", label: "链接管理", href: "/admin/links", icon: <IconLink size={17} /> },
-  { id: "categories", label: "分类管理", href: "/admin/categories", icon: <IconFolders size={17} /> },
-  { id: "settings", label: "站点设置", href: "/admin/settings", icon: <IconSettings size={17} /> },
-  { id: "engines", label: "搜索引擎", href: "/admin/search-engines", icon: <IconEngine size={17} /> },
-  { id: "export", label: "备份导入", href: "/admin/export", icon: <IconExport size={17} /> },
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "content",
+    label: "内容",
+    items: [
+      { id: "links", label: "链接管理", href: "/admin/links", icon: <IconLink size={17} /> },
+      {
+        id: "categories",
+        label: "分类管理",
+        href: "/admin/categories",
+        icon: <IconFolders size={17} />,
+      },
+      {
+        id: "engines",
+        label: "搜索引擎",
+        href: "/admin/search-engines",
+        icon: <IconEngine size={17} />,
+      },
+    ],
+  },
+  {
+    id: "system",
+    label: "系统",
+    items: [
+      { id: "settings", label: "站点设置", href: "/admin/settings", icon: <IconSettings size={17} /> },
+    ],
+  },
+  {
+    id: "data",
+    label: "数据",
+    items: [
+      {
+        id: "export",
+        label: "数据导入导出",
+        href: "/admin/export",
+        icon: <IconExport size={17} />,
+      },
+    ],
+  },
 ];
 
 export function AdminShell({ siteName, children }: { siteName: string; children: ReactNode }) {
@@ -57,7 +90,7 @@ export function AdminShell({ siteName, children }: { siteName: string; children:
       sidenav={
         <SideNav
           mobileLabel="菜单"
-          items={NAV}
+          groups={NAV_GROUPS}
           open={navOpen}
           onOpenChange={setNavOpen}
           footer={
